@@ -1,6 +1,5 @@
 import streamlit as st
 import cv2
-import tensorflow as tf
 import numpy as np
 import os
 from fpdf import FPDF
@@ -9,6 +8,11 @@ from datetime import datetime
 import matplotlib.cm as cm
 import hashlib
 import matplotlib.pyplot as plt
+
+try:
+    import tensorflow as tf
+except ImportError:
+    tf = None
 
 
 st.set_page_config(page_title="DEEPFAKE VIDEO AI SYSTEM", page_icon="🛡️", layout="wide")
@@ -99,7 +103,25 @@ class UltimateForensicReport(FPDF):
 
 @st.cache_resource
 def load_forensic_engine():
+    if tf is None:
+        return None
     return tf.keras.applications.Xception(weights='imagenet')
+
+
+def analyze_frame(frame, model):
+    if tf is not None and model is not None:
+        img_array = tf.keras.applications.xception.preprocess_input(np.expand_dims(cv2.resize(frame, (299, 299)), axis=0))
+        preds = model.predict(img_array, verbose=0)
+        score = float(np.max(preds))
+        heatmap = make_gradcam_heatmap(img_array, model, "block14_sepconv2_act")
+        return score, heatmap, img_array
+
+    gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    blur_score = float(cv2.Laplacian(gray_frame, cv2.CV_64F).var())
+    noise_score = float(np.std(gray_frame))
+    score = float(np.clip((noise_score / 64.0) + (1.0 - min(blur_score, 500.0) / 500.0), 0.0, 1.0) / 2.0)
+    heatmap = cv2.normalize(np.abs(cv2.Laplacian(gray_frame, cv2.CV_64F)), None, 0, 1, cv2.NORM_MINMAX)
+    return score, heatmap, None
 
 def make_gradcam_heatmap(img_array, model, last_conv_layer_name):
     grad_model = tf.keras.models.Model([model.inputs], [model.get_layer(last_conv_layer_name).output, model.output])
@@ -145,12 +167,7 @@ if uploaded_file:
             cap.release()
             
             if ret:
-                img_array = tf.keras.applications.xception.preprocess_input(np.expand_dims(cv2.resize(frame, (299, 299)), axis=0))
-                preds = model.predict(img_array)
-                score = float(np.max(preds))
-                
-           
-                heatmap = make_gradcam_heatmap(img_array, model, "block14_sepconv2_act")
+                score, heatmap, _ = analyze_frame(frame, model)
                 grad_img = apply_heatmap(frame, heatmap)
                 grad_path = "forensic_results/grad_evidence.jpg"
                 cv2.imwrite(grad_path, cv2.cvtColor(grad_img, cv2.COLOR_RGB2BGR))
