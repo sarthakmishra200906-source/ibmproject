@@ -132,6 +132,9 @@ if uploaded_file:
     
     if st.button("🚨 PERFORM FULL ANALYSIS"):
         model = load_forensic_engine()
+        grad_path = None
+        chart_path = None
+        score = 0.0
         
         with st.status("Performing Comprehensive Multi-Modal Scan...", expanded=True) as status:
             v_hash = get_file_hash(tfile.name)
@@ -142,7 +145,6 @@ if uploaded_file:
             cap.release()
             
             if ret:
-            
                 img_array = tf.keras.applications.xception.preprocess_input(np.expand_dims(cv2.resize(frame, (299, 299)), axis=0))
                 preds = model.predict(img_array)
                 score = float(np.max(preds))
@@ -167,6 +169,8 @@ if uploaded_file:
                 chart_path = "forensic_results/prob_chart.png"
                 plt.savefig(chart_path, bbox_inches='tight')
                 plt.close(fig)
+            else:
+                st.warning("Could not read a usable frame from the uploaded video. The report will be generated without visual analysis artifacts.")
 
             status.update(label=" Analysis Complete!", state="complete")
 
@@ -181,12 +185,16 @@ if uploaded_file:
         pdf.cell(0, 7, f"OFFICER: {investigator}", 0, 1)
 
         pdf.chapter_header("2. TEMPORAL ANOMALY SCAN")
-        if os.path.exists(chart_path):
+        if chart_path and os.path.exists(chart_path):
             pdf.image(chart_path, w=150)
+        else:
+            pdf.cell(0, 7, "Temporal anomaly scan unavailable.", 0, 1)
         
         pdf.chapter_header("3. AI HD HEATMAP ANALYSIS")
-        if os.path.exists(grad_path):
+        if grad_path and os.path.exists(grad_path):
             pdf.image(grad_path, w=110)
+        else:
+            pdf.cell(0, 7, "Heatmap analysis unavailable.", 0, 1)
         
         pdf.set_font("Arial", 'I', 9)
         pdf.ln(5)
@@ -227,6 +235,12 @@ if uploaded_file:
 
         col1, col2 = st.columns(2)
         with col1:
-            st.image(grad_path, caption="Visual HD Heatmap Analysis")
+            if grad_path and os.path.exists(grad_path):
+                st.image(grad_path, caption="Visual HD Heatmap Analysis")
+            else:
+                st.info("Heatmap analysis was not generated for this file.")
         with col2:
-            st.image(chart_path, caption="Temporal Detection Probability")
+            if chart_path and os.path.exists(chart_path):
+                st.image(chart_path, caption="Temporal Detection Probability")
+            else:
+                st.info("Temporal anomaly chart was not generated for this file.")
